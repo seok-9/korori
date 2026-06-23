@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
 <title>Korori — 今日の一手詰め</title>
 <style>
   :root{
@@ -15,7 +18,7 @@
   body{background:radial-gradient(120% 90% at 50% -10%,#1a2030 0%,var(--bg) 60%);
     color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",
     "Hiragino Kaku Gothic ProN",Meiryo,system-ui,sans-serif;display:flex;
-    flex-direction:column;align-items:center;min-height:100%;padding:16px 14px 28px;user-select:none}
+    flex-direction:column;align-items:center;min-height:100%;padding:16px 14px 28px;user-select:none;overscroll-behavior:none}
   .top{width:100%;max-width:480px;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
   .brand{font-weight:800;letter-spacing:.5px;font-size:20px}
   .brand small{color:var(--dim);font-weight:600;font-size:11px;display:block;letter-spacing:2px;margin-top:1px}
@@ -30,7 +33,7 @@
     align-items:baseline;color:var(--dim);font-size:12.5px;margin-bottom:12px}
   .sub b{color:var(--ink)} .sub .tag{color:var(--accent);font-weight:700}
 
-  .stage{position:relative;width:min(92vw,480px);aspect-ratio:1;border-radius:22px;
+  .stage{position:relative;width:min(92vw,480px);aspect-ratio:1;border-radius:22px;touch-action:none;
     background:var(--panel);box-shadow:0 30px 60px -20px #000,inset 0 1px 0 #ffffff10;
     display:flex;align-items:center;justify-content:center;overflow:hidden;
     transition:transform .18s cubic-bezier(.3,1.4,.5,1)}
@@ -277,6 +280,26 @@ function winFanfare(stars){ensureAudio();if(!AC)return;
   const chord=[1047,1319,1568,2093];chord.forEach(f=>note(f,.30,.85,{type:'sine',vol:.13,atk:.01}));
   chord.forEach(f=>note(f/2,.30,.85,{type:'triangle',vol:.05}));
   const sh=stars>=3?9:5;for(let i=0;i<sh;i++)note(2093*Math.pow(1.06,i),.34+i*.045,.18,{type:'sine',vol:.07});}
+function thud(steps){
+  ensureAudio(); if(muted||!AC) return;
+  const t=AC.currentTime;
+  // 本体：低いsineをピッチダウン（ボ→ブン）
+  const o=AC.createOscillator(), g=AC.createGain();
+  o.type='sine';
+  o.frequency.setValueAtTime(165+steps*6, t);
+  o.frequency.exponentialRampToValueAtTime(52, t+0.18);
+  g.gain.setValueAtTime(.0001,t);
+  g.gain.exponentialRampToValueAtTime(.34, t+0.012);
+  g.gain.exponentialRampToValueAtTime(.0001, t+0.24);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t+0.27);
+  // サブ低音で重さを足す
+  const o2=AC.createOscillator(), g2=AC.createGain();
+  o2.type='triangle';
+  o2.frequency.setValueAtTime(95, t); o2.frequency.exponentialRampToValueAtTime(45, t+0.15);
+  g2.gain.setValueAtTime(.0001,t); g2.gain.exponentialRampToValueAtTime(.20, t+0.014);
+  g2.gain.exponentialRampToValueAtTime(.0001, t+0.18);
+  o2.connect(g2); g2.connect(master); o2.start(t); o2.stop(t+0.2);
+}
 
 function parse(p){world={walls:new Set(),key:null,door:null,start:null};
   p.g.forEach((row,r)=>{[...row].forEach((ch,c)=>{
@@ -317,7 +340,7 @@ function move(dir){
   ball=rest;placeBall(rest,false);
   setTimeout(()=>{
     b.style.transform=(dir==='left'||dir==='right')?'scaleX(.82) scaleY(1.12)':'scaleX(1.12) scaleY(.82)';
-    setTimeout(()=>b.style.transform='',110);beep(300+steps*18,.09,'sine',.10);buzz(12);
+    setTimeout(()=>b.style.transform='',110);thud(steps);buzz(12);
     if(touched&&hasKey===false){hasKey=true;const k=document.getElementById('key');
       if(k){spark(world.key[0],world.key[1]);k.classList.remove('key');k.id='';}
       document.getElementById('door').classList.remove('locked');
@@ -611,6 +634,7 @@ function closeReplay(){const v=document.getElementById('replayVeil');v.style.dis
 // ---- input ----
 addEventListener('keydown',e=>{const m={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[e.key];if(m){e.preventDefault();move(m);}});
 let sx,sy;
+stage.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
 stage.addEventListener('touchstart',e=>{const t=e.touches[0];sx=t.clientX;sy=t.clientY;},{passive:true});
 stage.addEventListener('touchend',e=>{const t=e.changedTouches[0],dx=t.clientX-sx,dy=t.clientY-sy;
   if(Math.abs(dx)<18&&Math.abs(dy)<18)return;move(Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up'));},{passive:true});
