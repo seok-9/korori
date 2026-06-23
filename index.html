@@ -62,10 +62,19 @@
     box-shadow:0 6px 14px -3px #000a,0 0 22px #5ad1c455,inset 0 -3px 6px #0006;
     transition:left var(--rollT,.18s) cubic-bezier(.25,.7,.2,1),top var(--rollT,.18s) cubic-bezier(.25,.7,.2,1),transform .12s ease}
   .ball.win{transition:left .14s ease-in,top .14s ease-in,transform .22s cubic-bezier(.5,-.4,.7,0)!important}
+  /* 回転モードの落下：加速イージング（落ちる感じ）。固定モードは.ball基底のままで不変 */
+  .ball.falling{transition:left var(--rollT,.18s) cubic-bezier(.45,0,.95,.5),top var(--rollT,.18s) cubic-bezier(.45,0,.95,.5),transform .12s ease}
   .spark{position:absolute;z-index:6;width:10px;height:10px;border-radius:50%;background:var(--gold);pointer-events:none;opacity:0}
   .dial{position:absolute;top:12px;left:12px;width:38px;height:38px;border-radius:50%;
     border:1px solid var(--line);background:#0d1017aa;display:flex;align-items:center;justify-content:center;z-index:7}
   .dial svg{transition:transform .22s cubic-bezier(.3,1.3,.5,1)}
+  /* 回転モード用：方位コンパス（元の上=Nがどこを向いているか）とトグルON表示 */
+  .compass{position:absolute;top:12px;right:12px;width:38px;height:38px;border-radius:50%;
+    border:1px solid var(--line);background:#0d1017aa;display:none;align-items:center;justify-content:center;z-index:7}
+  .compass.on{display:flex}
+  #cneedle{transform-box:fill-box;transform-origin:center;transition:transform .2s cubic-bezier(.3,1.1,.4,1)}
+  .compass small{position:absolute;bottom:1px;font-size:8px;color:var(--dim);font-weight:700}
+  .iconbtn.on{color:var(--accent);border-color:#2a4a44;background:#13241f}
 
   .hud{width:min(92vw,480px);display:flex;justify-content:space-between;align-items:center;margin-top:14px;font-variant-numeric:tabular-nums}
   .moves{font-size:15px;color:var(--dim)} .moves b{color:var(--ink);font-size:20px;margin:0 2px}
@@ -113,6 +122,7 @@
     <div class="brand">Korori<small>重力を回す</small></div>
     <div class="topr">
       <div class="flame" id="flame">🔥 0</div>
+      <button class="iconbtn" id="rotToggle" title="回転モード（試作）">⟳</button>
       <button class="iconbtn" id="statsBtn">📊</button>
       <button class="iconbtn" id="mute">🔊</button>
     </div>
@@ -131,6 +141,13 @@
       </svg>
     </div>
     <div class="board" id="board"></div>
+    <div class="compass" id="compass">
+      <svg width="22" height="22" viewBox="0 0 22 22"><g id="cneedle">
+        <line x1="11" y1="4" x2="11" y2="14" stroke="#5ad1c4" stroke-width="2" stroke-linecap="round"/>
+        <polyline points="7.5,7.5 11,4 14.5,7.5" fill="none" stroke="#5ad1c4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </g></svg>
+      <small>N</small>
+    </div>
   </div>
 
   <div class="hud">
@@ -252,6 +269,13 @@ const POOL=[
 ];
 
 const N=7, DIRS={up:[-1,0],down:[1,0],left:[0,-1],right:[0,1]}, ANG={down:0,left:90,up:180,right:-90};
+// ===== 回転モード（仕様 korori_回転モード仕様.md）。数理は不変・回転は描画のみ・トグルで分岐 =====
+const ROT_CFG={rotateMs:180,rollMinMs:120,rollPerCellMs:45,compass:true,scale:0.8};
+const ROT_ANG={down:0,right:90,up:180,left:270};   // worldDirを画面下に向ける盤面回転角（リプレイbuildStepsと同一）
+const RORDER=['up','right','down','left'];          // 時計回り
+function rotateDir(dir,deg){const i=RORDER.indexOf(dir);const steps=((Math.round(deg/90)%4)+4)%4;return RORDER[(i+steps)%4];}
+let rotationMode=false; try{rotationMode=localStorage.getItem('korori_rotmode')==='1';}catch(e){}
+let rot=0;   // 現在の盤面回転（連続角・90の倍数）
 const EPOCH=Date.UTC(2026,5,22);
 function dayNum(){const n=new Date();return Math.floor((Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())-EPOCH)/864e5);}
 function dailyIndex(){return ((dayNum()*23)%POOL.length+POOL.length)%POOL.length;}
@@ -330,7 +354,11 @@ function layout(){board.innerHTML='';const s=cellPx(),pad=s*0.07;
     d.style.left=(c*s+pad)+'px';d.style.top=(r*s+pad)+'px';d.style.width=(s-2*pad)+'px';d.style.height=(s-2*pad)+'px';
     board.appendChild(d);}
   const b=document.createElement('div');b.className='ball';b.id='ball';
-  const bs=s*0.6;b.style.width=bs+'px';b.style.height=bs+'px';board.appendChild(b);placeBall(ball,true);}
+  const bs=s*0.6;b.style.width=bs+'px';b.style.height=bs+'px';board.appendChild(b);placeBall(ball,true);
+  // 回転モードなら現在の盤面回転を即時反映（resize時も維持）。固定モードは無変形＝従来通り
+  board.style.transition='none';
+  board.style.transform=rotationMode?('rotate('+rot+'deg) scale('+ROT_CFG.scale+')'):'';
+  updateCompass();}
 function placeBall(p,instant){const r=p[0],c=p[1],s=cellPx(),bs=s*0.6,off=(s-bs)/2,b=document.getElementById('ball');
   if(instant)b.style.setProperty('--rollT','0s');b.style.left=(c*s+off)+'px';b.style.top=(r*s+off)+'px';}
 function roll(pos,dir){const dd=DIRS[dir],dr=dd[0],dc=dd[1];let r=pos[0],c=pos[1],touched=false,steps=0;
@@ -343,6 +371,7 @@ function spark(r,c){const s=cellPx();for(let i=0;i<8;i++){const e=document.creat
     {duration:480,easing:'cubic-bezier(.2,.8,.2,1)'}).onfinish=()=>e.remove();}}
 
 function move(dir){
+  if(rotationMode){moveRot(dir);return;}
   if(busy||done)return; ensureAudio();
   const res=roll(ball,dir),rest=res.rest,touched=res.touched,steps=res.steps;
   document.getElementById('arrow').parentElement.style.transform='rotate('+ANG[dir]+'deg)';
@@ -364,6 +393,48 @@ function move(dir){
   },Math.min(300,70+steps*40));
 }
 
+// 方位コンパス：元の上方向(N)がいま画面上どこを向くか。盤面回転rotだけ針を回す
+function updateCompass(){
+  const cp=document.getElementById('compass'); if(!cp)return;
+  cp.classList.toggle('on', rotationMode && ROT_CFG.compass);
+  const nd=document.getElementById('cneedle'); if(nd) nd.style.transform='rotate('+rot+'deg)';
+}
+// 回転モードの1手（仕様§3）。固定モードのmove()は触らずこちらに分岐
+function moveRot(screenDir){
+  if(busy||done)return; ensureAudio();
+  // 画面スワイプ方向 → 現在の回転を打ち消してワールド方向へ（数理は固定モードと同一）
+  const worldDir=rotateDir(screenDir,-rot);
+  const res=roll(ball,worldDir),rest=res.rest,touched=res.touched,steps=res.steps;
+  document.getElementById('arrow').parentElement.style.transform='rotate('+ANG[screenDir]+'deg)'; // ダイヤルは画面スワイプ向き
+  if(steps===0){beep(160,.08,'square',.06);buzz(8);return;}
+  busy=true;moves++;document.getElementById('mv').textContent=moves;
+  // 盤面を worldDir が画面下を向く角度へ最短回り（rotは連続角で保持）
+  const want=ROT_ANG[worldDir];
+  rot+=(((want-rot)%360)+540)%360-180;
+  const bd=document.getElementById('board');
+  bd.style.transition='transform '+ROT_CFG.rotateMs+'ms cubic-bezier(.3,1.05,.4,1)';
+  bd.style.transform='rotate('+rot+'deg) scale('+ROT_CFG.scale+')';
+  updateCompass();
+  const b=document.getElementById('ball');
+  const rollMs=Math.max(ROT_CFG.rollMinMs,steps*ROT_CFG.rollPerCellMs);
+  setTimeout(()=>{               // アニメ後半：回転完了後にボールを停止セルへ落下
+    b.classList.add('falling'); b.style.setProperty('--rollT',(rollMs/1000)+'s');
+    ball=rest; placeBall(rest,false);
+    setTimeout(()=>{
+      // 着地スカッシュは落下軸(worldDir)に沿って潰す＝回転後は画面縦の潰れに見える
+      const vert=(worldDir==='up'||worldDir==='down');
+      b.style.transform=vert?'scaleX(1.12) scaleY(.82)':'scaleX(.82) scaleY(1.12)';
+      setTimeout(()=>{b.style.transform='';b.classList.remove('falling');},120);
+      thud(steps);buzz(12);
+      if(touched&&hasKey===false){hasKey=true;const k=document.getElementById('key');
+        if(k){spark(world.key[0],world.key[1]);k.classList.remove('key');k.id='';}
+        document.getElementById('door').classList.remove('locked');
+        beep(880,.12,'triangle',.13);beep(1320,.14,'triangle',.10);buzz([10,30,12]);}
+      if(rest[0]===world.door[0]&&rest[1]===world.door[1]&&hasKey){done=true;win();return;}
+      busy=false;
+    },rollMs);
+  },ROT_CFG.rotateMs);
+}
 function fxAt(el){const r=el.getBoundingClientRect();return{x:r.left+r.width/2,y:r.top+r.height/2};}
 function flash(x,y){const f=document.getElementById('flash');f.style.setProperty('--fx',x+'px');f.style.setProperty('--fy',y+'px');
   f.animate([{opacity:0},{opacity:.95},{opacity:0}],{duration:520,easing:'cubic-bezier(.2,.85,.2,1)'});}
@@ -455,7 +526,7 @@ function copyShare(e){const t=document.getElementById('shareTxt').textContent;
   const b=e.target;const o=b.textContent;b.textContent='コピー済み ✓';setTimeout(()=>b.textContent=o,1400);}
 
 function prep(p,isPractice){
-  practice=isPractice;parse(p);curPar=p.par;ball=world.start.slice();hasKey=false;moves=0;busy=false;done=false;
+  practice=isPractice;parse(p);curPar=p.par;ball=world.start.slice();hasKey=false;moves=0;busy=false;done=false;rot=0;
   track('start',{mode:isPractice?'practice':'daily',no:dayNum()+1,par:p.par});
   document.getElementById('mv').textContent=0;document.getElementById('par').textContent=p.par;
   document.getElementById('arrow').parentElement.style.transform='rotate(0deg)';
@@ -660,10 +731,20 @@ addEventListener('mouseup',e=>{if(!mdown)return;mdown=false;const dx=e.clientX-m
 document.getElementById('reset').onclick=resetCurrent;
 document.getElementById('practice').onclick=()=>startPractice();
 document.getElementById('statsBtn').onclick=showStats;
+document.getElementById('rotToggle').onclick=()=>{
+  rotationMode=!rotationMode;
+  try{localStorage.setItem('korori_rotmode',rotationMode?'1':'0');}catch(e){}
+  document.getElementById('rotToggle').classList.toggle('on',rotationMode);
+  // 現在の問題を仕切り直してモード反映（rot=0へ）。既存の固定/回転ロジックは共通のprep/layoutを使う
+  if(practice){ if(_lastPractice)prep(_lastPractice,true); }
+  else if(!done){ prep(POOL[dailyIndex()],false); }
+  else { rot=0; layout(); }
+};
 document.getElementById('statsClose').onclick=()=>{const v=document.getElementById('statsVeil');v.style.display='none';v.classList.remove('show');};
 document.getElementById('rclose').onclick=closeReplay;
 document.getElementById('mute').onclick=e=>{muted=!muted;e.target.textContent=muted?'🔇':'🔊';};
 addEventListener('resize',()=>layout());
+document.getElementById('rotToggle').classList.toggle('on',rotationMode);
 startDaily();
 </script>
 </body>
